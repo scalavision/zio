@@ -2,6 +2,7 @@ package zio.stream
 
 import java.net.InetSocketAddress
 import java.nio.channels.AsynchronousSocketChannel
+import java.nio.file.StandardWatchEventKinds
 import java.nio.file.{ Files, NoSuchFileException, Paths }
 import java.nio.{ Buffer, ByteBuffer }
 
@@ -9,6 +10,7 @@ import scala.concurrent.ExecutionContext.global
 
 import zio._
 import zio.blocking.effectBlockingIO
+import zio.duration._
 import zio.test.Assertion._
 import zio.test._
 
@@ -204,6 +206,61 @@ object ZStreamPlatformSpecificSpec extends ZIOBaseSpec {
           )
         }
       ),
+      /*
+      suite("monitorFileEvent")(
+        testM("monitor file creation") {
+          def testFile(testPath: java.nio.file.Path) = Paths.get(testPath.toString() + "/testfile")
+          Task(Files.createTempDirectory("monitorDirTest")).bracket { path =>
+            Task(Files.delete(path)).orDie
+          } { path =>
+
+            for {
+              monitor <-
+                ZStream.monitorFileEvent( path.toString(), StandardWatchEventKinds.ENTRY_CREATE)
+              _       <- ZStream.fromEffect(Task(Files.createFile(testFile(path))))
+            } yield assertM(monitor.asInstanceOf[ZIO[Any, Throwable, Path]])(equalTo(testFile(path)))
+
+          }
+
+        }
+      ),*/
+      suite("monitorFileEvent")(
+        testM("monitor file creation") {
+          def testFile(testPath: java.nio.file.Path) = Paths.get(testPath.toString() + "/testfile")
+          Task(Files.createTempDirectory("monitorDirTest")).bracket { path =>
+            Task(Files.delete(testFile(path))).orDie *>
+              Task(Files.delete(path)).orDie
+          } { path =>
+            println(path.toString())
+            assertM(
+              for {
+                data <- ZStream.monitorFileEvent(path.toString(), StandardWatchEventKinds.ENTRY_CREATE).runCollect
+                _    = ZIO.sleep(10.seconds)
+                _    <- ZStream.fromEffect(Task(Files.createFile(testFile(path)))).runDrain
+              } yield data
+            )(equalTo(Chunk(testFile(path))))
+          }
+        }
+      ),
+      /*
+      suite("monitorFileEvents")(
+        testM("monitor file creation") {
+          def testFile(testPath: java.nio.file.Path) = Paths.get(testPath.toString() + "/testfile")
+          Task(Files.createTempDirectory("monitorDirTest")).bracket { path =>
+            Task(Files.delete(testFile(path))).orDie *>
+              Task(Files.delete(path)).orDie
+          } { path =>
+            println(path.toString())
+            assertM(
+              (
+                ZStream.monitorFileEvents( path.toString(), StandardWatchEventKinds.ENTRY_CREATE).flatMap { s =>
+                  ZStream.fromEffect(Task(Files.createFile(testFile(path)))).drain ++
+                  ZStream(s)
+                }.runCollect
+              ))(equalTo(Chunk(testFile(path))))
+          }
+        }
+      ),*/
       suite("fromSocketServer")(
         testM("read data")(checkM(Gen.anyString.filter(_.nonEmpty)) { message =>
           for {
